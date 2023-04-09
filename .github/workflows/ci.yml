@@ -33,10 +33,14 @@ jobs:
         with:
           name: compose-apps-exporter
           path: ./target/release/compose-apps-exporter
+          if-no-files-found: error
 
   release:
     name: Release
     needs: build
+    permissions:
+      contents: write
+      packages: write
     runs-on: ubuntu-latest
     steps:
       - name: Create Release
