@@ -57,7 +57,7 @@ jobs:
       - name: Download Binary Artifact
         uses: actions/download-artifact@v2
         with:
-          name: compose-apps-exporter
+          name: compose-apps-exporter.linux-amd64
           path: ./target/release
       
       - name: Upload Binary Artifact to Release
@@ -67,8 +67,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./target/release/compose-apps-exporter
-          asset_name: compose-apps-exporter
+          asset_path: ./target/release/compose-apps-exporter.linux-amd64
+          asset_name: compose-apps-exporter.linux-amd64
           asset_content_type: application/octet-stream
 
   push_docker_image_to_registry:
