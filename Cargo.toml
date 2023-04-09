@@ -1,0 +1,19 @@
+[package]
+name = "compose-apps-exporter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hyper = { version = "0.14.25", features = ["full"] }
+tokio = { version = "1.27.0", features = ["full"] }
+serde = { version = "1.0.159", features = ["derive"] }
+serde_yaml = "0.9.19"
+serde_json = "1.0.95"
+figment = { version = "0.10.8", features = ["env", "yaml"] }
+directories = "5.0"
+glob = "0.3.1"
+clap = { version = "4.2.1", features = ["derive"] }
+indoc = "2.0.1"
+
+[[bin]]
+name = "compose-apps-exporter"
