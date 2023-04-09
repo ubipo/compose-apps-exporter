@@ -27,12 +27,15 @@ jobs:
         with:
           command: build
           args: --release
+
+      - name: Targz Binary
+        run: tar -czvf compose-apps-exporter.linux-amd64.tar.gz ./target/release/compose-apps-exporter
       
       - name: Upload Binary Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: compose-apps-exporter.linux-amd64
-          path: ./target/release/compose-apps-exporter
+          path: ./compose-apps-exporter.linux-amd64.tar.gz
           if-no-files-found: error
 
   release:
@@ -55,7 +58,7 @@ jobs:
           prerelease: false
 
       - name: Download Binary Artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: compose-apps-exporter.linux-amd64
           path: ./target/release
@@ -67,8 +70,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./target/release/compose-apps-exporter.linux-amd64
-          asset_name: compose-apps-exporter.linux-amd64
+          asset_path: ./target/release/
+          asset_name: compose-apps-exporter.linux-amd64.tar.gz
           asset_content_type: application/octet-stream
 
   push_docker_image_to_registry:
