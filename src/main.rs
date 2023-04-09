@@ -10,7 +10,7 @@ use hyper::{header, Body, Method, Request, Response, Server, StatusCode};
 use indoc::indoc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::{collections::HashMap, net::IpAddr};
+use std::{collections::HashMap, fmt::Debug, net::IpAddr};
 use std::{convert::Infallible, str::FromStr};
 use std::{net::SocketAddr, path::Path};
 
@@ -81,7 +81,7 @@ fn config_paths_from_globs(
 ) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
     let paths: Vec<_> = config_path_globs
         .iter()
-        .map(|glob| glob::glob(glob))
+        .map(|glob| glob::glob(glob).map_err(|err| format!("Invalid glob: {}", err)))
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flatten()
@@ -105,17 +105,32 @@ fn exec_docker_compose_cmd(
     config_path: impl AsRef<std::path::Path>,
     args: &[&str],
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let output = std::process::Command::new("docker")
-        .arg("compose")
-        .arg("-f")
-        .arg(config_path.as_ref())
-        .args(args)
-        .output()?;
+    let mut command = std::process::Command::new("docker");
+    command.arg("compose");
+    command.arg("-f").arg(config_path.as_ref());
+    command.args(args);
+    let args_str: Vec<_> = command
+        .get_args()
+        .map(|arg| arg.to_string_lossy())
+        .collect();
+    let cmd_str = format!("docker {}", args_str.join(" "));
+    let output = command.output().map_err(|err| {
+        format!(
+            "Failed to execute `{}` (is docker installed?): {}",
+            cmd_str, err
+        )
+    })?;
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "'docker compose {}' failed with status code {}",
-            args.join(" "),
-            output.status
+            "`{}` failed with status code {}: {}",
+            cmd_str,
+            output
+                .status
+                .code()
+                .map(|code| code.to_string())
+                .unwrap_or_else(|| "unknown".to_string()),
+            stderr
         )
         .into());
     }
@@ -125,22 +140,51 @@ fn exec_docker_compose_cmd(
 fn read_compose_config(
     config_path: impl AsRef<std::path::Path>,
 ) -> Result<ComposeConfig, Box<dyn std::error::Error>> {
-    let config = serde_yaml::from_slice(&exec_docker_compose_cmd(config_path, &["config"])?)?;
+    let config = serde_yaml::from_slice(
+        &exec_docker_compose_cmd(&config_path, &["config"]).map_err(|err| {
+            format!(
+                "Failed to execute `docker compose config` for {}: {}",
+                config_path.as_ref().display(),
+                err
+            )
+        })?,
+    )
+    .map_err(|err| {
+        format!(
+            "Failed to parse `docker compose config` output for {}: {}",
+            config_path.as_ref().display(),
+            err
+        )
+    })?;
     Ok(config)
 }
 
 fn read_running_compose_containers(
     config_path: impl AsRef<std::path::Path>,
 ) -> Result<Vec<Container>, Box<dyn std::error::Error>> {
-    let running_containers: Vec<Container> = serde_json::from_slice(&exec_docker_compose_cmd(
-        config_path,
-        &["ps", "--format", "json"],
-    )?)?;
+    let running_containers: Vec<Container> = serde_json::from_slice(
+        &exec_docker_compose_cmd(&config_path, &["ps", "--format", "json"]).map_err(|err| {
+            format!(
+                "Failed to execute `docker compose ps` for {}: {}",
+                config_path.as_ref().display(),
+                err
+            )
+        })?,
+    )
+    .map_err(|err| {
+        format!(
+            "Failed to parse `docker compose ps` output for {}: {}",
+            config_path.as_ref().display(),
+            err
+        )
+    })?;
     Ok(running_containers)
 }
 
+/// Convert the given compose config and list of running containers to a
+/// multiline string of metrics
 fn config_and_containers_to_metrics(
-    compose_config: ComposeConfig,
+    compose_config: &ComposeConfig,
     running_containers: Vec<Container>,
 ) -> String {
     let service_names = compose_config.services.keys();
@@ -171,8 +215,23 @@ fn config_and_containers_to_metrics(
     return metrics.collect::<Vec<String>>().join("\n");
 }
 
-async fn get_metrics_for_configs_paths(
-    config_paths: Vec<impl AsRef<std::path::Path>>,
+/// Get all metrics as for given docker compose config path as a multi-line
+/// string
+fn get_metrics_for_config_path(
+    config_path: impl AsRef<std::path::Path> + Debug,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let config = read_compose_config(config_path.as_ref())?;
+    let running_containers = read_running_compose_containers(config_path.as_ref())?;
+    Ok(config_and_containers_to_metrics(
+        &config,
+        running_containers,
+    ))
+}
+
+/// Get all metrics as for given docker compose config paths as a multi-line
+/// string
+fn get_metrics_for_configs_paths(
+    config_paths: Vec<impl AsRef<std::path::Path> + Debug>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let config_metrics_comment = indoc! {"
         # HELP compose_service_up Whether the docker compose services's status is 'Up' (as opposed to e.g. 'Restarting')
@@ -182,13 +241,15 @@ async fn get_metrics_for_configs_paths(
     "};
     let nbro_config_paths = config_paths.len();
     let config_metrics = config_paths
-        .into_iter()
-        .map(|config_path| {
-            let config = read_compose_config(config_path.as_ref())?;
-            let running_containers = read_running_compose_containers(config_path.as_ref())?;
-            Ok(config_and_containers_to_metrics(config, running_containers))
-        })
-        .collect::<Result<Vec<String>, Box<dyn std::error::Error>>>()?
+        .iter()
+        .map(|config_path| get_metrics_for_config_path(config_path))
+        .collect::<Result<Vec<String>, Box<dyn std::error::Error>>>()
+        .map_err(|err| {
+            format!(
+                "Failed to get metrics for config paths {:?}: {}",
+                config_paths, err
+            )
+        })?
         .join("\n");
     let nbro_configs_metric = format!(
         indoc! {"
@@ -199,16 +260,18 @@ async fn get_metrics_for_configs_paths(
         nbro_config_paths
     );
     Ok(format!(
-        "{}{}{}",
+        "{}{}\n{}",
         config_metrics_comment, config_metrics, nbro_configs_metric
     ))
 }
 
-async fn get_metrics_for_config_globs(
+/// Convert a list of globs to a list of config paths and use them to get metrics
+/// for each app as a multi-line string
+fn get_metrics_for_config_globs(
     config_globs: &[String],
 ) -> Result<String, Box<dyn std::error::Error>> {
     let config_paths = config_paths_from_globs(config_globs)?;
-    get_metrics_for_configs_paths(config_paths).await
+    get_metrics_for_configs_paths(config_paths)
 }
 
 async fn handle_request(
@@ -225,7 +288,7 @@ async fn handle_request(
                 .insert(header::LOCATION, HeaderValue::from_static("/metrics"));
         }
         (&Method::GET, "/metrics") => {
-            let maybe_metrics = get_metrics_for_config_globs(&compose_config_globs).await;
+            let maybe_metrics = get_metrics_for_config_globs(&compose_config_globs);
             *response.body_mut() = match maybe_metrics {
                 Ok(mut metrics) => {
                     metrics.push('\n');

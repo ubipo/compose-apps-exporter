@@ -15,6 +15,9 @@ and `0` otherwise.
 Additionally, the exporter will export a `compose_apps_nbro_configs` metric with
 the number of compose files it has read.
 
+The exporter relies on [docker compose V2](https://docs.docker.com/compose/compose-v2/), and so requires the compose configs to
+be in file format V2 or V3.
+
 ## Usage
 
 ### Local
@@ -26,13 +29,21 @@ compose-apps-exporter
 ...or with custom configuration:
 
 ```bash
-compose-apps-exporter --port 9200 --address "127.24.0.1" --compose-configs-glob "/etc/my-own-path-to-compose-apps/**/non-standard.yaml"
+compose-apps-exporter \
+  --port 9200 \
+  --address "127.24.0.1" \
+  --compose-configs-glob "/etc/my-own-path-to-compose-apps/**/non-standard.yaml"
 ```
 
 ### Docker
 
 ```bash
-docker run -d -p 9179:9179 -v /path/to/compose/apps:/etc/compose-apps:ro --name compose-apps-exporter compose-apps-exporter
+docker run -d \
+  -p 9179:9179 \
+  -v /run/docker.sock:/run/docker.sock:rw \
+  -v /path/to/compose/apps:/etc/compose-apps:ro \
+  --name compose-apps-exporter \
+  pfiers/compose-apps-exporter -a "0.0.0.0"
 ```
 
 ## Configuration
