@@ -70,7 +70,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./target/release/
+          asset_path: ./target/release/compose-apps-exporter.linux-amd64.tar.gz
           asset_name: compose-apps-exporter.linux-amd64.tar.gz
           asset_content_type: application/octet-stream
 
