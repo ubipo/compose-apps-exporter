@@ -31,7 +31,7 @@ jobs:
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: compose-apps-exporter
+          name: compose-apps-exporter.linux-amd64
           path: ./target/release/compose-apps-exporter
           if-no-files-found: error
 
