@@ -20,7 +20,7 @@ be in file format V2 or V3.
 
 ## Usage
 
-### Local
+### Executable
 
 ```bash
 compose-apps-exporter
@@ -35,6 +35,10 @@ compose-apps-exporter \
   --compose-configs-glob "/etc/my-own-path-to-compose-apps/**/non-standard.yaml"
 ```
 
+By default, the exporter only listens on `127.0.0.1`. To listen on all
+interfaces, use the `--address 0.0.0.0` or `-a 0.0.0.0` flag, or set the
+`COMPOSE_APPS_EXPORTER_ADDRESS=0.0.0.0` environment variable.
+
 ### Docker
 
 ```bash
@@ -43,8 +47,10 @@ docker run -d \
   -v /run/docker.sock:/run/docker.sock:rw \
   -v /path/to/compose/apps:/etc/compose-apps:ro \
   --name compose-apps-exporter \
-  pfiers/compose-apps-exporter -a "0.0.0.0"
+  pfiers/compose-apps-exporter
 ```
+
+In docker, the exporter listens on all interfaces by default.
 
 ## Configuration
 
