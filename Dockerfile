@@ -8,4 +8,5 @@ RUN cargo install --path . --root /usr/local/cargo
 FROM alpine:3
 COPY --from=builder /usr/local/cargo/bin/compose-apps-exporter /usr/local/bin/compose-apps-exporter
 RUN apk add --no-cache ca-certificates tini docker-cli docker-cli-compose
+ENV COMPOSE_APPS_EXPORTER_ADDRESS="0.0.0.0"
 ENTRYPOINT ["/sbin/tini", "--", "compose-apps-exporter"]
