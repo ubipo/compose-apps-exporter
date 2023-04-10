@@ -4,19 +4,29 @@ Prometheus exporter for docker compose apps
 
 On every scrape, the exporter will read all [docker compose files](https://docs.docker.com/compose/compose-file/compose-file-v3/) in the given
 paths and, for every service of every app, will export the following metrics:
-- `compose_service_up{compose_app="my-app", compose_service="my-service"}`  
-(1 if the service status is 'Up', 0 otherwise)
-- `compose_service_health{compose_app="my-app", compose_service="my-service"}`  
-(1 if the service health is 'healthy', 0 otherwise)
+- `compose_service_state{compose_app="my-app", compose_service="my-service", state="<state>"}`
+- `compose_service_health{compose_app="my-app", compose_service="my-service",
+  state="<state>"}`
 
-Both of these metrics will have a value of `1` if the service is up and healthy,
-and `0` otherwise.
+For both of these, there are as many metrics as there are possible states. For
+'state', the possible states are: `not_up`, `created`, `restarting`, `running`,
+`removing`, `paused`, `exited`, or `dead`. And for 'health', they are: `not_up`,
+`no_check`, `starting`, `healthy`, or `unhealthy`.
+
+For either metric, only one of the states is active (value of `1`) at a time.
+All others will be `0`.
 
 Additionally, the exporter will export a `compose_apps_nbro_configs` metric with
 the number of compose files it has read.
 
-The exporter relies on [docker compose V2](https://docs.docker.com/compose/compose-v2/), and so requires the compose configs to
-be in file format V2 or V3.
+Personally I just have each service's
+`compose_service_health{compose_app="my-app", compose_service="my-service",
+state="healthy"}` metric hooked up to a OK/Not OK 'Stat' panel on my Grafana
+dashboard, but the choice is yours :)
+
+The exporter relies on [docker compose
+V2](https://docs.docker.com/compose/compose-v2/), and so requires the compose
+configs to be in file format V2 or V3.
 
 ## Usage
 
@@ -36,8 +46,8 @@ compose-apps-exporter \
 ```
 
 By default, the exporter only listens on `127.0.0.1`. To listen on all
-interfaces, use the `--address 0.0.0.0` or `-a 0.0.0.0` flag, or set the
-`COMPOSE_APPS_EXPORTER_ADDRESS=0.0.0.0` environment variable.
+interfaces, use the `--address 0.0.0.0` or `-a 0.0.0.0` flag, set the
+`COMPOSE_APPS_EXPORTER_ADDRESS=0.0.0.0` environment variable, or use the config file.
 
 ### Docker
 

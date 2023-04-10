@@ -72,7 +72,10 @@ struct ComposeConfig {
 #[serde(rename_all = "PascalCase")]
 struct Container {
     name: String,
-    status: String,
+    /// One of: created, restarting, running, removing, paused, exited, or dead
+    state: String,
+    // /// e.g. 'Up x minutes (healthy)'
+    // status: String,
     health: String,
 }
 
@@ -181,6 +184,65 @@ fn read_running_compose_containers(
     Ok(running_containers)
 }
 
+fn service_metric_to_string(
+    compose_name: &str,
+    service_name: &str,
+    metric_name: &str,
+    extra_labels: &[(&str, &str)],
+    value: u8,
+) -> String {
+    let mut labels = vec![
+        ("compose_name", compose_name),
+        ("service_name", service_name),
+    ];
+    labels.extend(extra_labels);
+    let labels_str = labels
+        .iter()
+        .map(|(key, value)| format!("{}=\"{}\"", key, value))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "compose_service_{}{{{}}} {}",
+        metric_name, labels_str, value
+    )
+}
+
+fn service_state_metric_to_strings(
+    compose_name: &str,
+    service_name: &str,
+    metric_name: &str,
+    possible_values: &[&str],
+    value: &str,
+) -> Vec<String> {
+    let mut metrics = vec![];
+    for possible_value in possible_values {
+        let value = if value == *possible_value { 1 } else { 0 };
+        metrics.push(service_metric_to_string(
+            compose_name,
+            service_name,
+            metric_name,
+            &[("state", possible_value)],
+            value,
+        ));
+    }
+    metrics
+}
+
+static STATE_NOT_UP: &str = "not_up";
+static STATE_HEALTH_NO_CHECK: &str = "no_check";
+static POSSIBLE_STATES_STATE: [&str; 8] = [
+    STATE_NOT_UP,
+    "created",
+    "restarting",
+    "running",
+    "removing",
+    "paused",
+    "exited",
+    "dead",
+];
+static POSSIBLE_STATES_HEALTH: [&str; 5] =
+    [STATE_NOT_UP, "no_check", "starting", "healthy", "unhealthy"];
+
 /// Convert the given compose config and list of running containers to a
 /// multiline string of metrics
 fn config_and_containers_to_metrics(
@@ -193,24 +255,28 @@ fn config_and_containers_to_metrics(
         let container = running_containers
             .iter()
             .find(|container| container.name == *container_name);
-        let status = match container {
-            Some(container) => container.status.as_str().starts_with("Up") as u8,
-            None => 0,
+        let state = container.map_or(STATE_NOT_UP, |c| &c.state);
+        let health = match container.map(|c| c.health.as_str()) {
+            None => STATE_NOT_UP,
+            Some("") => STATE_HEALTH_NO_CHECK,
+            Some(health) => health,
         };
-        let health = match container {
-            Some(container) => (container.health.as_str() == "healthy") as u8,
-            None => 0,
-        };
-        vec![
-            format!(
-                "compose_service_up{{compose_name=\"{}\", compose_service=\"{}\"}} {}",
-                compose_config.name, service_name, status
-            ),
-            format!(
-                "compose_service_health{{compose_name=\"{}\", compose_service=\"{}\"}} {}",
-                compose_config.name, service_name, health
-            ),
-        ]
+        let compose_name = &compose_config.name;
+        let mut metrics = service_state_metric_to_strings(
+            compose_name,
+            service_name,
+            "health",
+            &POSSIBLE_STATES_HEALTH,
+            health,
+        );
+        metrics.append(&mut service_state_metric_to_strings(
+            compose_name,
+            service_name,
+            "state",
+            &POSSIBLE_STATES_STATE,
+            state,
+        ));
+        metrics
     });
     return metrics.collect::<Vec<String>>().join("\n");
 }
